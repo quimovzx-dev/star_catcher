@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Star Catcher</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Space+Grotesk:wght@400;700&display=swap">
+<style>
+:root{--night:#1c1033;--panel:#2b1a4d;--paper:#fff1d6;--teal:#19e3c1;--pink:#ff3d81;--sun:#ffc83d}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:grid;place-items:center;padding:12px;background:var(--night);color:var(--paper);font:16px 'Space Grotesk',system-ui,sans-serif}
+.screen{display:none;width:100%;max-width:380px}
+.screen.on{display:block;animation:fade .25s}
+@keyframes fade{from{opacity:0}}
+h1,h2,h3,.big{font-family:Bungee,Impact,sans-serif;font-weight:400;margin:0}
+h1{font-size:38px;color:var(--sun);line-height:1}
+p{margin:10px 0 16px;opacity:.8}
+input{width:100%;padding:13px;margin-bottom:10px;border:2px solid var(--panel);border-radius:10px;background:var(--panel);color:var(--paper);font:inherit}
+input:focus{outline:none;border-color:var(--teal)}
+button{padding:13px 16px;border:0;border-radius:10px;font:700 16px 'Space Grotesk',sans-serif;background:var(--sun);color:var(--night);cursor:pointer;transition:transform .12s}
+button:active{transform:scale(.94)}
+button.alt{background:var(--panel);color:var(--paper)}
+.row{display:flex;gap:10px}.row button{flex:1}
+#msg{margin-top:12px;color:var(--pink);min-height:22px}
+.ticket{background:var(--paper);color:var(--night);border-radius:14px;
+ -webkit-mask:radial-gradient(circle 11px at 0 78px,#0000 98%,#000) left/51% 100% no-repeat,radial-gradient(circle 11px at 100% 78px,#0000 98%,#000) right/51% 100% no-repeat;
+ mask:radial-gradient(circle 11px at 0 78px,#0000 98%,#000) left/51% 100% no-repeat,radial-gradient(circle 11px at 100% 78px,#0000 98%,#000) right/51% 100% no-repeat}
+.top{height:78px;padding:14px 20px;border-bottom:3px dashed #c9b98f;display:flex;justify-content:space-between;align-items:center}
+.top small{font-weight:700}.big{font-size:34px;color:var(--pink)}
+.bot{padding:16px 20px 20px}
+.bot h2{font-size:22px}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
+.stats b{display:block;font:400 26px Bungee,Impact,sans-serif;color:var(--night)}
+.go{width:100%;margin:16px 0;font-size:20px;background:var(--teal)}
+h3{font-size:18px;color:var(--sun)}
+ol{margin:8px 0 0;padding-left:22px;line-height:1.7}
+canvas{display:block;margin:auto;width:auto;height:min(88vh,calc((100vw - 24px)*14/9));aspect-ratio:9/14;touch-action:none;border-radius:16px;background:linear-gradient(#120a24,#2b1a4d)}
+#over .card{background:var(--panel);border-radius:16px;padding:22px}
+@media(prefers-reduced-motion:reduce){.screen.on{animation:none}}
+</style>
+</head>
+<body>
+
+<section id="login" class="screen on">
+  <h1>Star Catcher</h1>
+  <p>Log in to get your GDBP pass. New player? Pick a name and tap Register.</p>
+  <input id="u" placeholder="USR_NAME" autocomplete="username">
+  <input id="p" type="password" placeholder="PASSWD" autocomplete="current-password">
+  <div class="row"><button onclick="auth('login')">Log in</button><button class="alt" onclick="auth('register')">Register</button></div>
+  <div id="msg"></div>
+</section>
+
+<section id="menu" class="screen">
+  <div class="ticket">
+    <div class="top"><small>GDBP<br>pass</small><span class="big" id="gid"></span></div>
+    <div class="bot"><h2 id="hello"></h2><div class="stats" id="st"></div></div>
+  </div>
+  <button class="go" onclick="play()">Play</button>
+  <h3>Top players</h3>
+  <ol id="lb"></ol>
+</section>
+
+<section id="game" class="screen"><canvas id="cv"></canvas></section>
+
+<section id="over" class="screen">
+  <div class="card">
+    <h1>Game over</h1>
+    <p id="res"></p>
+    <div class="row"><button onclick="play()">Play again</button><button class="alt" onclick="menu()">Menu</button></div>
+  </div>
+</section>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => '&#' + c.charCodeAt(0) + ';');
+const show = id => document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.id === id));
+let token = '', D, G;
+
+async function api(path, body) {
+  const r = await fetch('/api/' + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...body, token })
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || 'Server error');
+  return d;
+}
+
+async function auth(mode) {
+  $('msg').textContent = '';
+  try {
+    D = await api('auth', { mode, usr_name: $('u').value.trim(), passwd: $('p').value });
+    token = D.token;
+    menu();
+  } catch (e) { $('msg').textContent = e.message; }
+}
+
+function menu() {
+  const s = D.stats;
+  $('gid').textContent = '#' + s.gdbp_number;
+  $('hello').textContent = s.usr_name;
+  $('st').innerHTML = [['logins', s.logins], ['matches', s.matches], ['best score', s.best_score], ['minutes played', Math.round(s.total_seconds / 60)]]
+    .map(([k, v]) => `<div><b>${v}</b>${k}</div>`).join('');
+  $('lb').innerHTML = D.top.map(t => `<li>${esc(t.usr_name)}: ${t.best_score}</li>`).join('');
+  show('menu');
+}
+
+/* ---------- Game: catch stars, dodge bombs, 3 lives ---------- */
+const cv = $('cv'), g = cv.getContext('2d');
+cv.width = 360; cv.height = 560;
+
+function play() {
+  G = { x: 180, score: 0, lives: 3, t0: 0, last: 0, spawn: 0, items: [], fx: [] };
+  show('game');
+  requestAnimationFrame(loop);
+}
+
+const clampX = x => Math.max(24, Math.min(336, x));
+cv.onpointermove = cv.onpointerdown = e => {
+  if (!G) return;
+  const r = cv.getBoundingClientRect();
+  G.x = clampX((e.clientX - r.left) / r.width * 360);
+};
+onkeydown = e => { if (G) G.x = clampX(G.x + (e.key == 'ArrowRight' ? 28 : e.key == 'ArrowLeft' ? -28 : 0)); };
+
+function burst(x, y, c) {
+  for (let i = 0; i < 12; i++) {
+    const a = Math.random() * 6.28, v = 60 + Math.random() * 120;
+    G.fx.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: .5, c });
+  }
+}
+
+function loop(t) {
+  if (!G) return;
+  if (!G.t0) G.t0 = G.last = t;
+  const dt = Math.min((t - G.last) / 1000, .05), sec = (t - G.t0) / 1000;
+  G.last = t;
+  const speed = 140 + sec * 4;                       // gets faster over time
+
+  if ((G.spawn -= dt) <= 0) {
+    G.spawn = Math.max(.3, .85 - sec * .008);
+    G.items.push({ x: 24 + Math.random() * 312, y: -20, bomb: Math.random() < .3 });
+  }
+
+  g.clearRect(0, 0, 360, 560);
+  g.textAlign = 'center'; g.font = '30px serif';
+  for (const i of G.items) {
+    i.y += speed * dt;
+    if (i.y > 495 && i.y < 545 && Math.abs(i.x - G.x) < 36) {
+      i.dead = 1;
+      burst(i.x, i.y, i.bomb ? '#ff3d81' : '#ffc83d');
+      if (i.bomb) {
+        G.lives--;
+        cv.animate([{ transform: 'translateX(-8px)' }, { transform: 'translateX(8px)' }, { transform: 'none' }], 200);
+      } else G.score += 10;
+    } else if (i.y > 590) i.dead = 1;
+    g.fillText(i.bomb ? '💣' : '⭐', i.x, i.y);
+  }
+  G.items = G.items.filter(i => !i.dead);
+
+  for (const p of G.fx) {
+    p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
+    g.globalAlpha = Math.max(p.life * 2, 0); g.fillStyle = p.c; g.fillRect(p.x, p.y, 4, 4);
+  }
+  g.globalAlpha = 1;
+  G.fx = G.fx.filter(p => p.life > 0);
+
+  g.fillText('🛸', G.x, 535);
+  g.font = "700 20px 'Space Grotesk',sans-serif"; g.fillStyle = '#fff1d6';
+  g.textAlign = 'left'; g.fillText(G.score, 14, 32);
+  g.textAlign = 'right'; g.fillText('❤️'.repeat(G.lives), 348, 32);
+
+  if (G.lives > 0) requestAnimationFrame(loop); else finish(sec);
+}
+
+async function finish(sec) {
+  const score = G.score, duration = Math.round(sec);
+  G = null;
+  $('res').textContent = `Score ${score} in ${duration} seconds. Saving…`;
+  show('over');
+  try {
+    D = await api('save', { score, duration });
+    $('res').textContent = `Score ${score} in ${duration} seconds. Saved to your GDBP record.`;
+  } catch (e) { $('res').textContent = `Score ${score}. ${e.message}`; }
+}
+</script>
+</body>
+</html>
