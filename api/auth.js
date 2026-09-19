@@ -25,6 +25,8 @@ module.exports = async (req, res) => {
     await db('login_log', 'POST', { gdbp_number: id }); // record this login + timestamp
     res.json({ token: sign(id), ...(await summary(id)) });
   } catch (e) {
-    res.status(400).json({ error: /duplicate/.test(e.message) ? 'That name is taken. Try another.' : 'Something went wrong. Try again.' });
+    console.error(e);
+    const m = e.message || '';
+    res.status(400).json({ error: /duplicate/.test(m) ? 'That name is taken. Try another.' : 'Server problem: ' + m });
   }
 };
